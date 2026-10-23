@@ -74,12 +74,12 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 - **切换 variant 立即生效，不需要重启 IDE。** `PluginSettings.apply` 用 `IconLoader.clearCache()` 清掉平台图标缓存，再用 `LafManager.updateUI()` 重绘 —— 与 Material Theme 插件用的是同两个调用。路径 patcher 本来就每次调用都读设置，需要变成 variant 感知的只有平台图标缓存和 `IconPack.icons` 实例。设置页仍保留一个手动 "Restart IDE" 按钮，应对个别界面残留旧图标的情况。
 - **`javaSupport` 的默认值取决于 Java 插件是否安装**（`isPluginInstalled`），不是常量。
 - **构建必须跑在 JetBrains Runtime (JBR) 上，不能用普通 JDK。** `instrumentCode` 任务需要 IntelliJ 的插桩 agent，只有 JBR 才带（`<JBR>/bin/instrument.dll`）。用普通 JDK（比如 Microsoft JDK）时插件会退回去找 JBR 安装包，然后死在 `<java.home>\Packages does not exist`。构建前先确认 `java -version` 输出里有 `OpenJDK Runtime Environment JBR-…`。
-- **目标 IDE 固定为本地安装。** `build.gradle.kts` 用的是 `intellijPlatform { local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition") }` 而不是 `create(platformType, platformVersion)`，所以 `./gradlew buildPlugin`、`test`、`runIde` 都不会下载 IDE。后果有三点：路径与机器绑定，**在 `.github/workflows/build.yml` 的 Linux CI runner 上无法解析**；`gradle.properties` 里的 `platformType`/`platformVersion` 现在已无用（只有 `platformPlugins` 还在起作用）；`runLatestIde` 任务是独立的 —— 它自己钉住了 `2026.1.4` 版本，*会*去下载。另外注意安装目录名写着 "Community Edition"，但自 2025.3 起的统一发行版对外报告的是 **IntelliJ IDEA Ultimate**（`productCode=IU`，例如 `IU-262.10968.63`）。
+- **目标 IDE 由 `gradle.properties` 决定。** `build.gradle.kts` 用 `create(platformType, platformVersion)`，即 `gradle.properties` 里的 `IC` / `2023.1` —— 这也是 `.github/workflows/build.yml` 用的形式，CI 可直接跑通。代价是首次构建会下载一份 IDE。想改用本机已安装的 IDE、避免下载，把 `build.gradle.kts` 里那行注释掉的 `local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")` 打开即可（路径与机器绑定，CI 上不能开）。注意本地那个安装目录虽然叫 "Community Edition"，自 2025.3 起的统一发行版实际对外报告的是 **IntelliJ IDEA Ultimate**（`productCode=IU`，例如 `IU-262.10968.63`）。`runLatestIde` 任务是独立的 —— 它自己钉住了 `2026.1.4` 版本，*会*去下载。
 - **`maven.aliyun.com` 镜像声明在 `mavenCentral()` 前面**，用于在国内网络下加快依赖解析。保持它在 `repositories` 块的第一位。
 - **必须调高 Gradle 堆内存。** 生成的 `Icons.kt` 每个图标声明一个属性（约 2600 个），默认的 1 GB Gradle 堆和 Kotlin 守护进程都会内存溢出（`FastJarHandler` 里报 `OutOfMemoryError: Java heap space`）。`gradle.properties` 因此设置了 `org.gradle.jvmargs=-Xmx3g` 和 `kotlin.daemon.jvmargs=-Xmx3g` —— 不要往回调。
 - **lint 任务的源文件树必须限定在 `src`。** `checkFormatting` 和 `runStaticAnalysis` 原来用 `project.fileTree(rootDir)`，会把 `build/` 和沙箱目录一起扫进来；Gradle 9 一旦在同一次调用里看到这些产物就会以 "Property has implicit dependency" 让构建失败。保持 `source = project.fileTree("src")`。
-- **测试夹具必须排除 `com.intellij.modules.ultimate`。** IntelliJ IDEA Ultimate 自带一个付费功能模块，它注册了一个构造器为包级私有的 `postStartupActivity`；测试夹具实例化扩展走的路径要求构造器可访问，于是该 activity 无法创建，*所有*会打开项目的测试都会以 `Cannot find suitable constructor for class ...` 失败。因此 `test` 任务通过 `disabled.plugins.file.path` 系统属性让平台读一份禁用插件列表。IDE 沙箱不受影响 —— 那里需要这个模块。
-- **`PluginId` 用全限定方式引用，不要静态导入。** `PluginSettingsState` 和 `SettingsAdditionalSupportView` 里用的是 `PluginId.getId("com.intellij.java")`；不要改回 `import com.intellij.openapi.extensions.PluginId.getId` / `.findId` 的形式 —— 那样在本地锁定的 IDE 上解析不了。
+- **测试夹具必须排除 `com.intellij.modules.ultimate`。** IntelliJ IDEA Ultimate 自带一个付费功能模块，它注册了一个构造器为包级私有的 `postStartupActivity`；测试夹具实例化扩展走的路径要求构造器可访问，于是该 activity 无法创建，*所有*会打开项目的测试都会以 `Cannot find suitable constructor for class ...` 失败。因此 `test` 任务通过 `disabled.plugins.file.path` 系统属性让平台读一份禁用插件列表。用 `IC 2023.1` 时该模块不存在，这份列表是空操作；只有切到本地 Ultimate 安装时它才真正起作用。IDE 沙箱始终不受影响 —— 那里需要这个模块。
+- **`PluginId` 用全限定方式引用，不要静态导入。** `PluginSettingsState` 和 `SettingsAdditionalSupportView` 里用的是 `PluginId.getId("com.intellij.java")`；不要改回 `import com.intellij.openapi.extensions.PluginId.getId` / `.findId` 的静态导入形式 —— 当前平台下解析不了。
 - **可选插件依赖**（`com.intellij.java`、`org.jetbrains.kotlin`）在 `plugin.xml` 中声明，并各自配有独立的配置文件（`*-withJava.xml`、`*-withKotlin.xml`）。新增扩展点要注册到对应的文件里。
 
 ## PR 与提交约定
@@ -96,7 +96,7 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 
 ## 代码导航
 
-本仓库已由 [codegraph](https://github.com/colbymchenry/codegraph) 建立索引（69 个文件、515 个节点）。
+本仓库已由 [codegraph](https://github.com/colbymchenry/codegraph) 建立索引（70 个文件、530 个节点）。
 
 - 用 `codegraph_explore` MCP 工具理解某个符号的原理、查找调用方、评估改动影响面 —— 代码导航优先用它，而不是 grep/read 循环。
 - 改完代码后用 `codegraph sync` 刷新索引；`codegraph index` 做全量重建，`codegraph status` 检查新鲜度。
