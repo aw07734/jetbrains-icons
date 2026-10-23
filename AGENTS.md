@@ -15,6 +15,7 @@ pnpm build                                # generates Icons.kt + src/main/resour
 ./gradlew buildPlugin        # Windows: gradlew.bat buildPlugin — compiles, runs tests, produces the .jar
 ./gradlew test               # JUnit 5 tests only
 ./gradlew checkFormatting    # ktfmt (googleStyle) — must pass
+./gradlew format             # ktfmt (googleStyle) — rewrites the sources in place
 ./gradlew runStaticAnalysis  # detekt
 ./gradlew runIde             # sandbox IDE with the plugin loaded
 ```
@@ -60,6 +61,8 @@ Icon lookup has three layers, in priority order:
 - `./gradlew test` — `buildPlugin` depends on it, so it runs automatically on every build.
 - Add tests for new behavior in `src/test/kotlin/...`, mirroring the main package layout (e.g. `providers/JavaIconProviderTest.kt`).
 - Provider tests need the IntelliJ test fixtures; do not refactor them into plain unit tests without a reason.
+- **Compare icons by resource path, not object identity.** Use the `assertIconEquals` helper in `src/test/kotlin/com/github/com/catppuccin/jetbrains_icons/IconAssertions.kt`. The tests build their own `Icons` instance while the providers use `IconPack.icons`, and the platform may hand out distinct `CachedImageIcon` objects for the same resource — `CachedImageIcon.equals` also compares lambda-valued fields such as the tooltip supplier, so identity comparison is flaky and order dependent.
+- The test sources live in the `com.github.com.catppuccin.jetbrains_icons` package (note the doubled `com.github.com`), while the plugin sources use `com.github.catppuccin.jetbrains_icons`. Keep the existing test package as-is.
 
 ## Gotchas
 
@@ -70,8 +73,12 @@ Icon lookup has three layers, in priority order:
 - **A typo in `icon_patchers.json` fails silently.** Each config's `enabledSetting` is resolved by reflection against `PluginSettingsState`; an unknown name resolves to `false` via `runCatching { }.getOrDefault(false)`. Verify the setting name exists.
 - **Changing the variant requires an IDE restart.** `PluginSettings.apply` calls `restart()` when the pack changed, and only refreshes project views for the support toggles.
 - **`javaSupport` defaults to whether the Java plugin is installed** (`isPluginInstalled`), not to a constant.
-- **The target IDE is pinned to a local install.** `build.gradle.kts` uses `intellijPlatform { local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition") }` instead of `create(platformType, platformVersion)`, so no IDE is downloaded for `./gradlew buildPlugin`, `test`, or `runIde`. Consequences: the path is machine-specific and **will not resolve on the Linux CI runners** in `.github/workflows/build.yml`; `gradle.properties` `platformType`/`platformVersion` are now unused (only `platformPlugins` still matters). The `runLatestIde` task is separate — it pins its own `2026.1.4` IDE and *will* download it.
+- **The build must run on a JetBrains Runtime (JBR), not a plain JDK.** The `instrumentCode` task needs IntelliJ's instrumentation agent, which only the JBR ships (`<JBR>/bin/instrument.dll`). On a normal JDK (e.g. the Microsoft JDK) the plugin falls back to hunting for a JBR package and dies with `<java.home>\Packages does not exist`. Check `java -version` reports `OpenJDK Runtime Environment JBR-…` before building.
+- **The target IDE is pinned to a local install.** `build.gradle.kts` uses `intellijPlatform { local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition") }` instead of `create(platformType, platformVersion)`, so no IDE is downloaded for `./gradlew buildPlugin`, `test`, or `runIde`. Consequences: the path is machine-specific and **will not resolve on the Linux CI runners** in `.github/workflows/build.yml`; `gradle.properties` `platformType`/`platformVersion` are now unused (only `platformPlugins` still matters). The `runLatestIde` task is separate — it pins its own `2026.1.4` IDE and *will* download it. Note the install folder says "Community Edition" but the unified distribution since 2025.3 reports itself as **IntelliJ IDEA Ultimate** (`productCode=IU`, e.g. `IU-262.10968.63`).
 - **A `maven.aliyun.com` mirror is declared ahead of `mavenCentral()`** for faster dependency resolution on CN networks. Leave it first in the `repositories` block.
+- **The Gradle heap must be raised.** The generated `Icons.kt` declares one property per icon (~2600 of them), so the default 1 GB Gradle heap and the Kotlin daemon both run out of memory (`OutOfMemoryError: Java heap space` in `FastJarHandler`). `gradle.properties` sets `org.gradle.jvmargs=-Xmx3g` and `kotlin.daemon.jvmargs=-Xmx3g` for this reason — do not lower them.
+- **The lint tasks must scope their source tree to `src`.** `checkFormatting` and `runStaticAnalysis` used `project.fileTree(rootDir)`, which swept up `build/` and the sandbox. Gradle 9 then fails the build with "Property has implicit dependency" as soon as those outputs exist in the same invocation. Keep `source = project.fileTree("src")`.
+- **The test fixture must exclude `com.intellij.modules.ultimate`.** IntelliJ IDEA Ultimate ships a paid-features module that registers a `postStartupActivity` whose constructor is package-private; the test fixture instantiates extensions through a path that requires an accessible constructor, so the activity cannot be created and *every* test that opens a project fails with `Cannot find suitable constructor for class ...`. The `test` task therefore points the platform at a disabled-plugins list via the `disabled.plugins.file.path` system property. The IDE sandbox is untouched — the module is required there.
 - **`PluginId` is referenced fully qualified, not static-imported.** `PluginId.getId("com.intellij.java")` is used in `PluginSettingsState` and `SettingsAdditionalSupportView`; do not reintroduce the `import com.intellij.openapi.extensions.PluginId.getId` / `.findId` form — it does not resolve against the pinned local IDE.
 - **Optional plugin dependencies** (`com.intellij.java`, `org.jetbrains.kotlin`) are declared in `plugin.xml` with separate config files (`*-withJava.xml`, `*-withKotlin.xml`). Register new extension points in the matching file.
 
