@@ -1,104 +1,104 @@
 # AGENTS.md
 
-Catppuccin Icons — a pastel icon pack for JetBrains IDEs. Kotlin plugin that patches IDE icon paths, with a TypeScript generator that derives the icon set from the `catppuccin/vscode-icons` theme.
+Catppuccin Icons —— 面向 JetBrains IDE 的粉彩图标包。Kotlin 插件，通过改写 IDE 的图标路径生效；配套一个 TypeScript 生成器，从 `catppuccin/vscode-icons` 主题派生整套图标。
 
-## Setup commands
+## 准备命令
 
 ```shell
-git submodule update --init --recursive   # generate/vscode-icons — required for any icon generation
-corepack enable                          # provides pnpm@12.10.1
+git submodule update --init --recursive   # generate/vscode-icons —— 任何图标生成的前提
+corepack enable                          # 提供 pnpm@12.10.1
 pnpm install
-pnpm build                                # generates Icons.kt + src/main/resources/jetbrains_icons/icons/ — REQUIRED before Gradle
+pnpm build                                # 生成 Icons.kt + src/main/resources/jetbrains_icons/icons/ —— Gradle 构建前必须执行
 ```
 
 ```shell
-./gradlew buildPlugin        # Windows: gradlew.bat buildPlugin — compiles, runs tests, produces the .jar
-./gradlew test               # JUnit 5 tests only
-./gradlew checkFormatting    # ktfmt (googleStyle) — must pass
-./gradlew format             # ktfmt (googleStyle) — rewrites the sources in place
+./gradlew buildPlugin        # Windows：gradlew.bat buildPlugin —— 编译、跑测试、产出 .jar
+./gradlew test               # 只跑 JUnit 5 测试
+./gradlew checkFormatting    # ktfmt（googleStyle）—— 必须通过
+./gradlew format             # ktfmt（googleStyle）—— 就地重写源码
 ./gradlew runStaticAnalysis  # detekt
-./gradlew runIde             # sandbox IDE with the plugin loaded
+./gradlew runIde             # 带插件的沙箱 IDE
 ```
 
-## Project layout
+## 项目结构
 
-- `src/main/kotlin/com/github/catppuccin/jetbrains_icons/` — plugin source
-  - `IconProvider.kt` — generic file/folder icon provider
-  - `providers/` — language-specific providers (currently `JavaIconProvider`)
-  - `patcher/GeneralIconPatcher.kt` — `IconPathPatcher` that rewrites platform icon paths per variant
-  - `activity/IconPathPatcherActivity.kt` — `postStartupActivity` that installs the patchers
-  - `settings/` — `Configurable`, `PersistentStateComponent`, and Swing views
-  - `model/` — kotlinx.serialization models for `icon_patchers.json`
-  - `util/PsiClassUtils.kt` — PSI modifier helpers
-  - `bundles/PluginSettingsBundle.kt` — resource-bundle access
-- `src/main/resources/` — `META-INF/plugin.xml`, optional-dependency descriptors, `icon_patchers.json`, `messages/`
-- `src/test/kotlin/` — tests mirroring the main package layout
-- `generate/scripts/generate.ts` — icon generator (TypeScript, run via `pnpm build`)
-- `generate/vscode-icons/` — git submodule (upstream `catppuccin/vscode-icons`), source of SVGs and file/folder name maps
-- `.github/workflows/` — `build.yml` (CI), `release.yml` (marketplace publish), `vscode-icons.yml` (submodule bump)
+- `src/main/kotlin/com/github/catppuccin/jetbrains_icons/` —— 插件源码
+  - `IconProvider.kt` —— 通用的文件/文件夹图标 provider
+  - `providers/` —— 各语言专用 provider（目前只有 `JavaIconProvider`）
+  - `patcher/GeneralIconPatcher.kt` —— 按 variant 改写平台图标路径的 `IconPathPatcher`
+  - `activity/IconPathPatcherActivity.kt` —— 安装各 patcher 的 `postStartupActivity`
+  - `settings/` —— `Configurable`、`PersistentStateComponent` 与 Swing 视图
+  - `model/` —— `icon_patchers.json` 的 kotlinx.serialization 模型
+  - `util/PsiClassUtils.kt` —— PSI 修饰符辅助方法
+  - `bundles/PluginSettingsBundle.kt` —— 资源包访问
+- `src/main/resources/` —— `META-INF/plugin.xml`、可选依赖描述文件、`icon_patchers.json`、`messages/`
+- `src/test/kotlin/` —— 与主包结构对应的测试
+- `generate/scripts/generate.ts` —— 图标生成器（TypeScript，通过 `pnpm build` 运行）
+- `generate/vscode-icons/` —— git submodule（上游 `catppuccin/vscode-icons`），SVG 与文件/文件夹名映射的来源
+- `.github/workflows/` —— `build.yml`（CI）、`release.yml`（发布到 Marketplace）、`vscode-icons.yml`（更新 submodule）
 
-## Architecture
+## 架构
 
-Icon lookup has three layers, in priority order:
+图标查找分三层，按优先级排列：
 
-1. `providers/*` handle language-specific elements (e.g. Java class icons with static/visibility overlays).
-2. `IconProvider` handles everything else: filename override → folder map → filename map → extension map (longest extension first) → binary/default.
-3. `GeneralIconPatcher` rewrites the IDE's *own* platform icon paths at runtime, driven by `src/main/resources/icon_patchers.json` and the active variant.
+1. `providers/*` 处理语言专用元素（例如带 static/可见性叠加层的 Java class 图标）。
+2. `IconProvider` 处理其余全部：文件名覆盖 → 文件夹映射 → 文件名映射 → 扩展名映射（最长扩展名优先）→ binary/默认。
+3. `GeneralIconPatcher` 在运行时改写 IDE *自身* 的平台图标路径，由 `src/main/resources/icon_patchers.json` 和当前 variant 驱动。
 
-`IconPack.icons` is a lazy singleton over the generated `Icons` class; the variant comes from `PluginSettingsState.instance.variant`.
+`IconPack.icons` 为 `PluginSettingsState.instance.variant` 解析生成的 `Icons` 类，并按 variant 各缓存一份实例，因此切换 variant 无需重启 IDE 即可生效。
 
-## Code style
+## 代码风格
 
-- Kotlin: ktfmt `googleStyle` — 2-space indent, 100-column. Enforced by `./gradlew checkFormatting`.
-- detekt static analysis, config in `detekt.yaml` (`PackageNaming` disabled). Run `./gradlew runStaticAnalysis`.
-- `.editorconfig`: UTF-8, LF endings (CRLF for `.cmd`/`.bat`/`.ps1`), final newline, trimmed trailing whitespace, 2-space indent.
-- KDoc on public APIs — match the existing `@param`/`@return` doc-comment style.
-- TypeScript lives in the submodule and follows that project's own eslint config. Root `tsconfig.json` maps `@/*` → `generate/vscode-icons/src/*`.
+- Kotlin：ktfmt `googleStyle` —— 2 空格缩进，100 列宽。由 `./gradlew checkFormatting` 强制。
+- detekt 静态分析，配置在 `detekt.yaml`（`PackageNaming` 已禁用）。运行 `./gradlew runStaticAnalysis`。
+- `.editorconfig`：UTF-8、LF 换行（`.cmd`/`.bat`/`.ps1` 用 CRLF）、文件末尾保留换行、行尾空白裁剪、2 空格缩进。
+- 公开 API 要写 KDoc —— 沿用现有的 `@param`/`@return` 文档注释风格。
+- TypeScript 在 submodule 里，遵循该子项目自己的 eslint 配置。根目录 `tsconfig.json` 把 `@/*` 映射到 `generate/vscode-icons/src/*`。
 
-## Testing instructions
+## 测试说明
 
-- JUnit 5 (`junit-jupiter` 6.x) on the JUnit Platform, running against the IntelliJ platform test framework.
-- `./gradlew test` — `buildPlugin` depends on it, so it runs automatically on every build.
-- Add tests for new behavior in `src/test/kotlin/...`, mirroring the main package layout (e.g. `providers/JavaIconProviderTest.kt`).
-- Provider tests need the IntelliJ test fixtures; do not refactor them into plain unit tests without a reason.
-- **Compare icons by resource path, not object identity.** Use the `assertIconEquals` helper in `src/test/kotlin/com/github/com/catppuccin/jetbrains_icons/IconAssertions.kt`. The tests build their own `Icons` instance while the providers use `IconPack.icons`, and the platform may hand out distinct `CachedImageIcon` objects for the same resource — `CachedImageIcon.equals` also compares lambda-valued fields such as the tooltip supplier, so identity comparison is flaky and order dependent.
-- The test sources live in the `com.github.com.catppuccin.jetbrains_icons` package (note the doubled `com.github.com`), while the plugin sources use `com.github.catppuccin.jetbrains_icons`. Keep the existing test package as-is.
+- JUnit 5（`junit-jupiter` 6.x）跑在 JUnit Platform 上，测试基于 IntelliJ platform 测试框架。
+- `./gradlew test` —— `buildPlugin` 依赖它，所以每次构建都会自动执行。
+- 新行为的测试写在 `src/test/kotlin/...`，与主包结构对应（例如 `providers/JavaIconProviderTest.kt`）。
+- provider 测试需要 IntelliJ 测试夹具；没有充分理由不要把它们改写成普通单元测试。
+- **按资源路径比较图标，不要比较对象身份。** 用 `src/test/kotlin/com/github/com/catppuccin/jetbrains_icons/IconAssertions.kt` 里的 `assertIconEquals` 辅助函数。测试自建一份 `Icons` 实例，而 provider 走 `IconPack.icons`，平台对同一资源可能给出不同的 `CachedImageIcon` 对象 —— `CachedImageIcon.equals` 还会比较 tooltip supplier 这类 lambda 字段，所以身份比较既 flaky 又依赖执行顺序。
+- 测试源码位于 `com.github.com.catppuccin.jetbrains_icons` 包（注意 `com.github.com` 重复了一段），插件源码则是 `com.github.catppuccin.jetbrains_icons`。保持现有测试包名不变。
 
-## Gotchas
+## 坑点
 
-- **`pnpm build` is mandatory before any Gradle compile.** `Icons.kt` and `src/main/resources/jetbrains_icons/icons/` are gitignored generated output. Without them the Kotlin build fails on a missing `Icons` class.
-- **Never hand-edit or reformat generated output.** `Icons.kt` and the generated icons are excluded from both ktfmt and detekt for that reason. Change `generate/scripts/generate.ts` instead and regenerate.
-- **The submodule must be populated.** `pnpm build` reads `generate/vscode-icons/icons/<variant>/` and the submodule's `src/defaults/{fileIcons,folderIcons}.ts`. If the submodule is empty, generation produces nothing instead of failing loudly.
-- **Generated names are normalized**: `-` → `_`, and a leading digit gets a `_` prefix (`generateJvmField` / `generateExtensionsToIcons`). Icon resources are named `<variant>_<file>.svg`, e.g. `mocha_docker.svg`.
-- **A typo in `icon_patchers.json` fails silently.** Each config's `enabledSetting` is resolved by reflection against `PluginSettingsState`; an unknown name resolves to `false` via `runCatching { }.getOrDefault(false)`. Verify the setting name exists.
-- **Changing the variant requires an IDE restart.** `PluginSettings.apply` calls `restart()` when the pack changed, and only refreshes project views for the support toggles.
-- **`javaSupport` defaults to whether the Java plugin is installed** (`isPluginInstalled`), not to a constant.
-- **The build must run on a JetBrains Runtime (JBR), not a plain JDK.** The `instrumentCode` task needs IntelliJ's instrumentation agent, which only the JBR ships (`<JBR>/bin/instrument.dll`). On a normal JDK (e.g. the Microsoft JDK) the plugin falls back to hunting for a JBR package and dies with `<java.home>\Packages does not exist`. Check `java -version` reports `OpenJDK Runtime Environment JBR-…` before building.
-- **The target IDE is pinned to a local install.** `build.gradle.kts` uses `intellijPlatform { local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition") }` instead of `create(platformType, platformVersion)`, so no IDE is downloaded for `./gradlew buildPlugin`, `test`, or `runIde`. Consequences: the path is machine-specific and **will not resolve on the Linux CI runners** in `.github/workflows/build.yml`; `gradle.properties` `platformType`/`platformVersion` are now unused (only `platformPlugins` still matters). The `runLatestIde` task is separate — it pins its own `2026.1.4` IDE and *will* download it. Note the install folder says "Community Edition" but the unified distribution since 2025.3 reports itself as **IntelliJ IDEA Ultimate** (`productCode=IU`, e.g. `IU-262.10968.63`).
-- **A `maven.aliyun.com` mirror is declared ahead of `mavenCentral()`** for faster dependency resolution on CN networks. Leave it first in the `repositories` block.
-- **The Gradle heap must be raised.** The generated `Icons.kt` declares one property per icon (~2600 of them), so the default 1 GB Gradle heap and the Kotlin daemon both run out of memory (`OutOfMemoryError: Java heap space` in `FastJarHandler`). `gradle.properties` sets `org.gradle.jvmargs=-Xmx3g` and `kotlin.daemon.jvmargs=-Xmx3g` for this reason — do not lower them.
-- **The lint tasks must scope their source tree to `src`.** `checkFormatting` and `runStaticAnalysis` used `project.fileTree(rootDir)`, which swept up `build/` and the sandbox. Gradle 9 then fails the build with "Property has implicit dependency" as soon as those outputs exist in the same invocation. Keep `source = project.fileTree("src")`.
-- **The test fixture must exclude `com.intellij.modules.ultimate`.** IntelliJ IDEA Ultimate ships a paid-features module that registers a `postStartupActivity` whose constructor is package-private; the test fixture instantiates extensions through a path that requires an accessible constructor, so the activity cannot be created and *every* test that opens a project fails with `Cannot find suitable constructor for class ...`. The `test` task therefore points the platform at a disabled-plugins list via the `disabled.plugins.file.path` system property. The IDE sandbox is untouched — the module is required there.
-- **`PluginId` is referenced fully qualified, not static-imported.** `PluginId.getId("com.intellij.java")` is used in `PluginSettingsState` and `SettingsAdditionalSupportView`; do not reintroduce the `import com.intellij.openapi.extensions.PluginId.getId` / `.findId` form — it does not resolve against the pinned local IDE.
-- **Optional plugin dependencies** (`com.intellij.java`, `org.jetbrains.kotlin`) are declared in `plugin.xml` with separate config files (`*-withJava.xml`, `*-withKotlin.xml`). Register new extension points in the matching file.
+- **任何 Gradle 编译之前都必须先 `pnpm build`。** `Icons.kt` 和 `src/main/resources/jetbrains_icons/icons/` 都是被 gitignore 的生成产物。缺了它们，Kotlin 构建会因为找不到 `Icons` 类而失败。
+- **永远不要手工编辑或重排生成产物。** 正因如此，`Icons.kt` 和生成的图标都被排除在 ktfmt 和 detekt 之外。要改就去改 `generate/scripts/generate.ts`，然后重新生成。
+- **submodule 必须是完整的。** `pnpm build` 会读 `generate/vscode-icons/icons/<variant>/` 以及 submodule 里的 `src/defaults/{fileIcons,folderIcons}.ts`。submodule 为空时，生成过程不会报错，而是静默地产出空结果。
+- **生成的命名会做归一化**：`-` → `_`，以数字开头的加 `_` 前缀（`generateJvmField` / `generateExtensionsToIcons`）。图标资源名为 `<variant>_<file>.svg`，例如 `mocha_docker.svg`。
+- **`icon_patchers.json` 里写错名字会静默失败。** 每份配置的 `enabledSetting` 是通过反射在 `PluginSettingsState` 上解析的；名字不存在时会被 `runCatching { }.getOrDefault(false)` 解析成 `false`。提交前确认设置名真实存在。
+- **切换 variant 立即生效，不需要重启 IDE。** `PluginSettings.apply` 用 `IconLoader.clearCache()` 清掉平台图标缓存，再用 `LafManager.updateUI()` 重绘 —— 与 Material Theme 插件用的是同两个调用。路径 patcher 本来就每次调用都读设置，需要变成 variant 感知的只有平台图标缓存和 `IconPack.icons` 实例。设置页仍保留一个手动 "Restart IDE" 按钮，应对个别界面残留旧图标的情况。
+- **`javaSupport` 的默认值取决于 Java 插件是否安装**（`isPluginInstalled`），不是常量。
+- **构建必须跑在 JetBrains Runtime (JBR) 上，不能用普通 JDK。** `instrumentCode` 任务需要 IntelliJ 的插桩 agent，只有 JBR 才带（`<JBR>/bin/instrument.dll`）。用普通 JDK（比如 Microsoft JDK）时插件会退回去找 JBR 安装包，然后死在 `<java.home>\Packages does not exist`。构建前先确认 `java -version` 输出里有 `OpenJDK Runtime Environment JBR-…`。
+- **目标 IDE 固定为本地安装。** `build.gradle.kts` 用的是 `intellijPlatform { local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition") }` 而不是 `create(platformType, platformVersion)`，所以 `./gradlew buildPlugin`、`test`、`runIde` 都不会下载 IDE。后果有三点：路径与机器绑定，**在 `.github/workflows/build.yml` 的 Linux CI runner 上无法解析**；`gradle.properties` 里的 `platformType`/`platformVersion` 现在已无用（只有 `platformPlugins` 还在起作用）；`runLatestIde` 任务是独立的 —— 它自己钉住了 `2026.1.4` 版本，*会*去下载。另外注意安装目录名写着 "Community Edition"，但自 2025.3 起的统一发行版对外报告的是 **IntelliJ IDEA Ultimate**（`productCode=IU`，例如 `IU-262.10968.63`）。
+- **`maven.aliyun.com` 镜像声明在 `mavenCentral()` 前面**，用于在国内网络下加快依赖解析。保持它在 `repositories` 块的第一位。
+- **必须调高 Gradle 堆内存。** 生成的 `Icons.kt` 每个图标声明一个属性（约 2600 个），默认的 1 GB Gradle 堆和 Kotlin 守护进程都会内存溢出（`FastJarHandler` 里报 `OutOfMemoryError: Java heap space`）。`gradle.properties` 因此设置了 `org.gradle.jvmargs=-Xmx3g` 和 `kotlin.daemon.jvmargs=-Xmx3g` —— 不要往回调。
+- **lint 任务的源文件树必须限定在 `src`。** `checkFormatting` 和 `runStaticAnalysis` 原来用 `project.fileTree(rootDir)`，会把 `build/` 和沙箱目录一起扫进来；Gradle 9 一旦在同一次调用里看到这些产物就会以 "Property has implicit dependency" 让构建失败。保持 `source = project.fileTree("src")`。
+- **测试夹具必须排除 `com.intellij.modules.ultimate`。** IntelliJ IDEA Ultimate 自带一个付费功能模块，它注册了一个构造器为包级私有的 `postStartupActivity`；测试夹具实例化扩展走的路径要求构造器可访问，于是该 activity 无法创建，*所有*会打开项目的测试都会以 `Cannot find suitable constructor for class ...` 失败。因此 `test` 任务通过 `disabled.plugins.file.path` 系统属性让平台读一份禁用插件列表。IDE 沙箱不受影响 —— 那里需要这个模块。
+- **`PluginId` 用全限定方式引用，不要静态导入。** `PluginSettingsState` 和 `SettingsAdditionalSupportView` 里用的是 `PluginId.getId("com.intellij.java")`；不要改回 `import com.intellij.openapi.extensions.PluginId.getId` / `.findId` 的形式 —— 那样在本地锁定的 IDE 上解析不了。
+- **可选插件依赖**（`com.intellij.java`、`org.jetbrains.kotlin`）在 `plugin.xml` 中声明，并各自配有独立的配置文件（`*-withJava.xml`、`*-withKotlin.xml`）。新增扩展点要注册到对应的文件里。
 
-## PR & commit conventions
+## PR 与提交约定
 
-- Branch from `main`; CI runs on pushes and PRs touching `src/`, `generate/`, Gradle files, or the pnpm manifests.
-- Conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`). The release workflow commits the changelog as `docs: update changelog`.
-- Changelog lives in `CHANGELOG.md` and is rendered by the Gradle changelog plugin; keep the `[Unreleased]` section and the group order (Added, Changed, Deprecated, Removed, Fixed, Security).
-- Releases are cut by pushing a `v*` tag — `release.yml` publishes to the JetBrains Marketplace and opens a draft GitHub release.
+- 从 `main` 切分支；CI 会在 push 或 PR 触及 `src/`、`generate/`、Gradle 文件或 pnpm manifest 时运行。
+- 提交信息用 conventional commit 前缀（`feat:`、`fix:`、`docs:`、`refactor:`）。发布工作流会以 `docs: update changelog` 提交更新日志。
+- 更新日志在 `CHANGELOG.md`，由 Gradle changelog 插件渲染；保留 `[Unreleased]` 段落以及分组顺序（Added、Changed、Deprecated、Removed、Fixed、Security）。
+- 发版方式是推送 `v*` tag —— `release.yml` 会发布到 JetBrains Marketplace 并创建一个 GitHub 草稿 Release。
 
-## Security
+## 安全
 
-- Signing and publishing credentials come from environment variables only: `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD`, `PUBLISH_TOKEN`. Never commit, echo, or log them.
-- Do not run `signPlugin` / `publishPlugin` outside the release workflow.
+- 签名与发布凭据只从环境变量读取：`CERTIFICATE_CHAIN`、`PRIVATE_KEY`、`PRIVATE_KEY_PASSWORD`、`PUBLISH_TOKEN`。绝不提交、回显或记录它们。
+- 不要在发布工作流之外运行 `signPlugin` / `publishPlugin`。
 
-## Code navigation
+## 代码导航
 
-This repo is indexed by [codegraph](https://github.com/colbymchenry/codegraph) (69 files, 515 nodes).
+本仓库已由 [codegraph](https://github.com/colbymchenry/codegraph) 建立索引（69 个文件、515 个节点）。
 
-- Use the `codegraph_explore` MCP tool to understand how a symbol works, find its callers, or see what a change would affect — prefer it over grep/read loops for navigation.
-- After editing code, refresh the index with `codegraph sync`; use `codegraph index` for a full rebuild and `codegraph status` to check freshness.
-- The index respects `.gitignore`, so the generated `Icons.kt` and the 2600+ icon resources stay out of it — the graph covers hand-written code only.
-- The `.codegraph/.gitignore` file is safe to commit; the index database stays local and untracked.
+- 用 `codegraph_explore` MCP 工具理解某个符号的原理、查找调用方、评估改动影响面 —— 代码导航优先用它，而不是 grep/read 循环。
+- 改完代码后用 `codegraph sync` 刷新索引；`codegraph index` 做全量重建，`codegraph status` 检查新鲜度。
+- 索引遵循 `.gitignore`，所以生成的 `Icons.kt` 和 2600+ 图标资源不会进图 —— 图谱只覆盖手写代码。
+- `.codegraph/.gitignore` 可以安全提交；索引数据库留在本地，不纳入版本管理。
