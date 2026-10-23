@@ -1,13 +1,10 @@
 package com.github.catppuccin.jetbrains_icons.settings
 
-import com.github.catppuccin.jetbrains_icons.bundles.PluginSettingsBundle
-import com.intellij.ide.GeneralSettings
 import com.intellij.ide.projectView.ProjectView
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ex.ApplicationEx
+import com.intellij.ide.ui.LafManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.IconLoader
 import javax.swing.JComponent
 
 class PluginSettings : Configurable {
@@ -25,21 +22,19 @@ class PluginSettings : Configurable {
 
   override fun apply() {
     val state = PluginSettingsState.instance
+    val packChanged = packChanged()
+    val supportChanged =
+      component.additionalSupport.python.isSelected != state.pythonSupport ||
+        component.additionalSupport.java.isSelected != state.javaSupport ||
+        component.additionalSupport.go.isSelected != state.goSupport
 
     state.pythonSupport = component.additionalSupport.python.isSelected
     state.javaSupport = component.additionalSupport.java.isSelected
     state.goSupport = component.additionalSupport.go.isSelected
+    if (packChanged) state.variant = component.iconPack.variant
 
-    if (packChanged()) {
-      state.variant = component.iconPack.variant
-      restart()
-    }
-
-    val projects = ProjectManager.getInstance().openProjects
-    for (project in projects) {
-      val projectView = ProjectView.getInstance(project)
-      projectView?.refresh()
-      projectView?.currentProjectViewPane?.updateFromRoot(true)
+    if (packChanged || supportChanged) {
+      refreshIcons()
     }
   }
 
@@ -50,23 +45,21 @@ class PluginSettings : Configurable {
     return component.iconPack.variant != state.variant
   }
 
-  private fun restart() {
-    val exitConfirmed =
-      if (GeneralSettings.getInstance().isConfirmExit) {
-        Messages.showYesNoDialog(
-          PluginSettingsBundle.message("dialog.message.restart.ide"),
-          PluginSettingsBundle.message("dialog.title.restart.ide"),
-          PluginSettingsBundle.message("dialog.action.restart.yes"),
-          PluginSettingsBundle.message("dialog.action.restart.cancel"),
-          Messages.getWarningIcon(),
-        ) == Messages.YES
-      } else {
-        true
-      }
+  /**
+   * Applies the changed icon pack to the running IDE.
+   *
+   * The path patchers read the settings on every call, but the platform caches the icons it
+   * resolved from them, so the cache has to be dropped for the new variant to take effect. The UI
+   * is repainted afterwards so that every surface picks the new icons up.
+   */
+  private fun refreshIcons() {
+    IconLoader.clearCache()
+    LafManager.getInstance().updateUI()
 
-    if (exitConfirmed) {
-      val app = ApplicationManager.getApplication() as ApplicationEx
-      app.restart(true)
+    for (project in ProjectManager.getInstance().openProjects) {
+      val projectView = ProjectView.getInstance(project)
+      projectView?.refresh()
+      projectView?.currentProjectViewPane?.updateFromRoot(true)
     }
   }
 }
