@@ -43,7 +43,9 @@ repositories {
 
 dependencies {
   intellijPlatform {
-    local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")
+    create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+//  // 本地用
+//    local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")
     bundledPlugins(providers.gradleProperty("platformPlugins").map { it.split(',') })
     pluginVerifier()
     testFramework(TestFrameworkType.Platform)
