@@ -35,13 +35,14 @@ group = properties("pluginGroup")
 version = properties("pluginVersion")
 
 repositories {
+  maven { url = uri("https://maven.aliyun.com/repository/public/") }
   mavenCentral()
   intellijPlatform { defaultRepositories() }
 }
 
 dependencies {
   intellijPlatform {
-    create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+    local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")
     bundledPlugins(providers.gradleProperty("platformPlugins").map { it.split(',') })
     pluginVerifier()
     testFramework(TestFrameworkType.Platform)
