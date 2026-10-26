@@ -6,8 +6,6 @@
 
 ### Changed
 
-- Releases are now published as GitHub Releases in this repository only; the JetBrains Marketplace upload step was removed
-
 ### Deprecated
 
 ### Removed
@@ -15,6 +13,12 @@
 ### Fixed
 
 ### Security
+
+## 1.13.4 - 2026-10-26
+
+### Changed
+
+- Releases are now published as GitHub Releases in this repository only; the JetBrains Marketplace upload step was removed
 
 ## 1.13.3 - 2026-10-09
 
