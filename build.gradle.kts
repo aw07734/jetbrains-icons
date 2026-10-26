@@ -1,6 +1,7 @@
 import com.ncorti.ktfmt.gradle.tasks.KtfmtCheckTask
 import com.ncorti.ktfmt.gradle.tasks.KtfmtFormatTask
 import io.gitlab.arturbosch.detekt.Detekt
+import java.io.File
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.date
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
@@ -43,9 +44,20 @@ repositories {
 
 dependencies {
   intellijPlatform {
-    create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
-//  // 本地用
-//    local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")
+    // Build against the locally installed IDE when `localIdePath` points to an existing
+    // installation. Otherwise fall back to the platform pinned in `gradle.properties`
+    // (`platformType` / `platformVersion`), which is what CI builds against.
+    val localIdePath =
+      providers
+        .gradleProperty("localIdePath")
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { File(it).isDirectory }
+    if (localIdePath != null) {
+      local(localIdePath)
+    } else {
+      create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+    }
     bundledPlugins(providers.gradleProperty("platformPlugins").map { it.split(',') })
     pluginVerifier()
     testFramework(TestFrameworkType.Platform)

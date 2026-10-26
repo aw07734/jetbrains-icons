@@ -2,8 +2,15 @@
 #   - Generates icons from catppuccin/vscode
 #   - Patches the `CHANGELOG.md` into the `.jar` for updated release notes
 #   - Builds the `.jar`
-#   - Publishes to the JetBrains Marketplace
-#   - Creates a draft release on GitHub for maintainers with the new `.jar` to manually review and release
+#   - Attaches the `.jar` to a GitHub Release in this repository
+#
+# This fork is not published to the JetBrains Marketplace: the plugin ID belongs to the
+# upstream `catppuccin/jetbrains-icons` project, so the Marketplace upload step (and the
+# `JETBRAINS_MARKETPLACE_TOKEN` secret) was removed. Artifacts are distributed through the
+# Releases page of this repository only.
+#
+# The workflow name and the job name are kept as they were upstream so that any required
+# status check stays valid.
 
 name: Publish
 
@@ -20,6 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # Optional signing material. When these secrets are not configured, the plugin is
+      # distributed unsigned, which still works with "Install Plugin from Disk".
+      CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -66,11 +79,48 @@ jobs:
       - name: Test & Build Plugin
         run: ./gradlew buildPlugin
 
-      - name: Upload JAR
+      - name: Sign Plugin
+        # Only runs when the signing secrets are configured; otherwise the plugin is
+        # shipped unsigned and the step is skipped.
+        if: ${{ env.CERTIFICATE_CHAIN != '' }}
+        run: ./gradlew signPlugin
+
+      - name: Collect Release Artifacts
+        env:
+          JAR_NAME: ${{ env.name }}-${{ env.version }}.jar
+          ZIP_NAME: ${{ env.name }}-${{ env.version }}.zip
+        run: |
+          set -euo pipefail
+          mkdir -p release
+
+          jar="build/libs/${JAR_NAME}"
+          if [ ! -f "$jar" ]; then
+            # Fall back to any non-intermediate jar produced by `buildPlugin`.
+            jar=$(find build/libs -maxdepth 1 -name '*.jar' \
+              ! -name '*-base.jar' ! -name '*-instrumented.jar' ! -name '*-searchableOptions.jar' \
+              2>/dev/null | head -n 1 || true)
+          fi
+          if [ -z "$jar" ]; then
+            echo "::error::No plugin JAR found in build/libs"
+            exit 1
+          fi
+          cp "$jar" release/
+
+          # The signed distribution archive takes precedence when signing is enabled.
+          for candidate in "build/distributions/${ZIP_NAME%.zip}-signed.zip" "build/distributions/${ZIP_NAME}"; do
+            if [ -f "$candidate" ]; then
+              cp "$candidate" release/
+              break
+            fi
+          done
+
+          ls -l release
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.name }}-${{ env.version }}.jar
-          path: build/libs/*.jar
+          name: ${{ env.name }}-${{ env.version }}
+          path: release/*
 
       # Notes on Script Hardening: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
       - name: Output Release Notes
@@ -85,19 +135,20 @@ jobs:
 
           echo "$RELEASE_NOTES" >> $GITHUB_STEP_SUMMARY
 
-      - name: Publish Plugin
-        env:
-          PUBLISH_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
-        run: ./gradlew publishPlugin
-
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: build/libs/*.jar
+          artifacts: release/*
           body: ${{ env.release_notes }}
-          draft: true
+          # Draft by default, so the artifact can be reviewed before it goes live.
+          # Set the `RELEASE_DRAFT` repository variable to `false` to publish automatically.
+          draft: ${{ vars.RELEASE_DRAFT != 'false' }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Commit Release Notes
+        # The release already exists at this point, so a failure to push the patched
+        # changelog (e.g. a protected branch) must not fail the whole workflow.
+        continue-on-error: true
         uses: EndBug/add-and-commit@v11
         with:
           add: "CHANGELOG.md"

@@ -35,7 +35,7 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 - `src/test/kotlin/` —— 与主包结构对应的测试
 - `generate/scripts/generate.ts` —— 图标生成器（TypeScript，通过 `pnpm build` 运行）
 - `generate/vscode-icons/` —— git submodule（上游 `catppuccin/vscode-icons`），SVG 与文件/文件夹名映射的来源
-- `.github/workflows/` —— `build.yml`（CI）、`release.yml`（发布到 Marketplace）、`vscode-icons.yml`（更新 submodule）
+- `.github/workflows/` —— `build.yml`（CI）、`release.yml`（打包并发布到本仓库的 GitHub Release）、`vscode-icons.yml`（更新 submodule）
 
 ## 架构
 
@@ -74,7 +74,7 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 - **切换 variant 立即生效，不需要重启 IDE。** `PluginSettings.apply` 用 `IconLoader.clearCache()` 清掉平台图标缓存，再用 `LafManager.updateUI()` 重绘 —— 与 Material Theme 插件用的是同两个调用。路径 patcher 本来就每次调用都读设置，需要变成 variant 感知的只有平台图标缓存和 `IconPack.icons` 实例。设置页仍保留一个手动 "Restart IDE" 按钮，应对个别界面残留旧图标的情况。
 - **`javaSupport` 的默认值取决于 Java 插件是否安装**（`isPluginInstalled`），不是常量。
 - **构建必须跑在 JetBrains Runtime (JBR) 上，不能用普通 JDK。** `instrumentCode` 任务需要 IntelliJ 的插桩 agent，只有 JBR 才带（`<JBR>/bin/instrument.dll`）。用普通 JDK（比如 Microsoft JDK）时插件会退回去找 JBR 安装包，然后死在 `<java.home>\Packages does not exist`。构建前先确认 `java -version` 输出里有 `OpenJDK Runtime Environment JBR-…`。
-- **目标 IDE 由 `gradle.properties` 决定。** `build.gradle.kts` 用 `create(platformType, platformVersion)`，即 `gradle.properties` 里的 `IC` / `2023.1` —— 这也是 `.github/workflows/build.yml` 用的形式，CI 可直接跑通。代价是首次构建会下载一份 IDE。想改用本机已安装的 IDE、避免下载，把 `build.gradle.kts` 里那行注释掉的 `local("D:\\Program Files\\JetBrains\\IntelliJ IDEA Community Edition")` 打开即可（路径与机器绑定，CI 上不能开）。注意本地那个安装目录虽然叫 "Community Edition"，自 2025.3 起的统一发行版实际对外报告的是 **IntelliJ IDEA Ultimate**（`productCode=IU`，例如 `IU-262.10968.63`）。`runLatestIde` 任务是独立的 —— 它自己钉住了 `2026.1.4` 版本，*会*去下载。
+- **目标 IDE 的选择是自动的。** `build.gradle.kts` 先看 `localIdePath`（`gradle.properties` 里的可选路径）：指向一个真实存在的安装目录就走 `local(...)` 用本机 IDE，否则回落到 `create(platformType, platformVersion)`，即 `gradle.properties` 里的 `IC` / `2023.1`。CI 上 `localIdePath` 不存在，于是走 `create(...)` —— `.github/workflows/build.yml` 与 `release.yml` 都能直接跑通，代价是首次构建下载一份 IDE。想强制指定路径用 `-PlocalIdePath=...`；传空值（`-PlocalIdePath=`）则强制走 `create(...)`。注意本地那个安装目录虽然叫 "Community Edition"，自 2025.3 起的统一发行版实际对外报告的是 **IntelliJ IDEA Ultimate**（`productCode=IU`，例如 `IU-262.10968.63`）。`runLatestIde` 任务是独立的 —— 它自己钉住了 `2026.1.4` 版本，*会*去下载。
 - **`maven.aliyun.com` 镜像声明在 `mavenCentral()` 前面**，用于在国内网络下加快依赖解析。保持它在 `repositories` 块的第一位。
 - **必须调高 Gradle 堆内存。** 生成的 `Icons.kt` 每个图标声明一个属性（约 2600 个），默认的 1 GB Gradle 堆和 Kotlin 守护进程都会内存溢出（`FastJarHandler` 里报 `OutOfMemoryError: Java heap space`）。`gradle.properties` 因此设置了 `org.gradle.jvmargs=-Xmx3g` 和 `kotlin.daemon.jvmargs=-Xmx3g` —— 不要往回调。
 - **lint 任务的源文件树必须限定在 `src`。** `checkFormatting` 和 `runStaticAnalysis` 原来用 `project.fileTree(rootDir)`，会把 `build/` 和沙箱目录一起扫进来；Gradle 9 一旦在同一次调用里看到这些产物就会以 "Property has implicit dependency" 让构建失败。保持 `source = project.fileTree("src")`。
@@ -87,12 +87,12 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 - 从 `main` 切分支；CI 会在 push 或 PR 触及 `src/`、`generate/`、Gradle 文件或 pnpm manifest 时运行。
 - 提交信息用 conventional commit 前缀（`feat:`、`fix:`、`docs:`、`refactor:`）。发布工作流会以 `docs: update changelog` 提交更新日志。
 - 更新日志在 `CHANGELOG.md`，由 Gradle changelog 插件渲染；保留 `[Unreleased]` 段落以及分组顺序（Added、Changed、Deprecated、Removed、Fixed、Security）。
-- 发版方式是推送 `v*` tag —— `release.yml` 会发布到 JetBrains Marketplace 并创建一个 GitHub 草稿 Release。
+- 发版方式是推送 `v*` tag —— `release.yml` 只构建 jar 并在**本仓库**创建一个 GitHub Release（默认草稿），**不会**发布到 JetBrains Marketplace：插件 ID 属于上游 `catppuccin/jetbrains-icons`，fork 没有 Marketplace 权限。要改成直接发布，在仓库 Settings → Secrets and variables → Actions → Variables 里加一个 `RELEASE_DRAFT=false` 变量。
 
 ## 安全
 
-- 签名与发布凭据只从环境变量读取：`CERTIFICATE_CHAIN`、`PRIVATE_KEY`、`PRIVATE_KEY_PASSWORD`、`PUBLISH_TOKEN`。绝不提交、回显或记录它们。
-- 不要在发布工作流之外运行 `signPlugin` / `publishPlugin`。
+- 签名凭据只从环境变量读取：`CERTIFICATE_CHAIN`、`PRIVATE_KEY`、`PRIVATE_KEY_PASSWORD`。绝不提交、回显或记录它们。本 fork 不发布到 Marketplace，`PUBLISH_TOKEN` 已不再使用。
+- `signPlugin` 只在 `release.yml` 中、且仓库配置了上述签名 secrets 时才会执行；`publishPlugin`（Marketplace 上传）已废弃，不要运行它。
 
 ## 代码导航
 

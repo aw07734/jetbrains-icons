@@ -6,6 +6,8 @@
 
 ### Changed
 
+- Releases are now published as GitHub Releases in this repository only; the JetBrains Marketplace upload step was removed
+
 ### Deprecated
 
 ### Removed
