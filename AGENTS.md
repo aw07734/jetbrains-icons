@@ -62,6 +62,7 @@ pnpm build                                # 生成 Icons.kt + src/main/resources
 - 新行为的测试写在 `src/test/kotlin/...`，与主包结构对应（例如 `providers/JavaIconProviderTest.kt`）。
 - provider 测试需要 IntelliJ 测试夹具；没有充分理由不要把它们改写成普通单元测试。
 - **按资源路径比较图标，不要比较对象身份。** 用 `src/test/kotlin/com/github/com/catppuccin/jetbrains_icons/IconAssertions.kt` 里的 `assertIconEquals` 辅助函数。测试自建一份 `Icons` 实例，而 provider 走 `IconPack.icons`，平台对同一资源可能给出不同的 `CachedImageIcon` 对象 —— `CachedImageIcon.equals` 还会比较 tooltip supplier 这类 lambda 字段，所以身份比较既 flaky 又依赖执行顺序。
+- **测试源码必须能在 CI 的平台上编译。** CI 用 `gradle.properties` 里的 `IC 2023.1` 编译测试，本机开发用的是 2026.2 —— 后者才有 `com.intellij.ui.icons.IconPathProvider`，2023.1 没有。`assertIconEquals` 因此用反射读 `getOriginalPath()`，平台不提供该访问器时回退到平台自身的相等比较（旧平台本来就按路径比较）。**不要在测试里直接 import 只有新平台才有的类型**，否则 `compileTestKotlin` 会在 CI 上失败（主源码不受影响）。改完测试要两个平台各验一次：`./gradlew test`（本机）和 `./gradlew -PlocalIdePath= test`（CI 的 2023.1）。
 - 测试源码位于 `com.github.com.catppuccin.jetbrains_icons` 包（注意 `com.github.com` 重复了一段），插件源码则是 `com.github.catppuccin.jetbrains_icons`。保持现有测试包名不变。
 
 ## 坑点
